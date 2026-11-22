@@ -1,0 +1,39 @@
+/* Global styles: color variables (light/dark) and a minimal reset. */
+:root {
+  --bg: #f6f5f2;
+  --panel: #ffffff;
+  --text: #1c1b19;
+  --muted: #6b6860;
+  --border: #e2dfd8;
+  --accent: #d6452f;
+  --ok: #1f8a4c;
+  --warn: #b7791f;
+  --err: #c53030;
+  --code-bg: #f0eee9;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121211;
+    --panel: #1c1c1a;
+    --text: #ecebe7;
+    --muted: #9b988f;
+    --border: #2f2e2b;
+    --accent: #f0664f;
+    --ok: #48bb78;
+    --warn: #ecc94b;
+    --err: #fc8181;
+    --code-bg: #161615;
+  }
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+code, pre { font-family: var(--font-geist-mono), ui-monospace, monospace; }
