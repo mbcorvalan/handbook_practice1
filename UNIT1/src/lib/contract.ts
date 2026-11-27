@@ -17,12 +17,7 @@
 import { z } from "zod";
 import { CHANNEL_IDS, findChannel } from "./catalog";
 
-// ---------- 1) What the model returns ----------
-
-/*
-Lo que se le pide al modelo, chaneliD dato verificado con asi el modelo no puede invetar IDS
-
-*/
+// ---------- 1)what we ask the model----------
 
 export const ModelOutputSchema = z.object({
   action: z
@@ -62,9 +57,7 @@ const UnsupportedCommand = z.object({
   reason: z.string(),
 });
 
-/*
-Lo que la app aceptar ejectura es una union por action y puede ser selectchannel , needsMoreInfor, unpsorrtedCoomand
-*/
+ //what the app is willing to execute. 
 
 export const CommandSchema = z.discriminatedUnion("action", [
   SelectChannel,
