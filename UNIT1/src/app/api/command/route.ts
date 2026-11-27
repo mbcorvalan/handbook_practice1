@@ -49,8 +49,7 @@ const RequestSchema = z.object({
     .object({ originalRequest: z.string().max(500), question: z.string().max(500) })
     .nullable(),
   // Requires one of the allowed simulated YouTube scenario values.
-  scenario: z.enum(["live_found", "no_live_found", "lookup_failed"]),
-  latestScenario: z.enum(["latest_found", "no_uploads", "lookup_failed"]),
+  scenario: z.enum(["live", "latest_video", "no_content"]),
 });
 
 export async function POST(req: Request): Promise<Response> {
@@ -140,8 +139,8 @@ export async function POST(req: Request): Promise<Response> {
           if (command.action === "select_channel") {
             const channel = findChannel(command.channelId)!; // already checked in validateModelText
             channelName = channel.name;
-            // Live first; if confirmed not live, latest upload (see playback.ts).
-            const decision = await resolvePlayback(channel, body.scenario, body.latestScenario);
+            // Live first; if not live, latest video (see playback.ts).
+            const decision = await resolvePlayback(channel, body.scenario);
             lookup = decision.live;
             latestUpload = decision.latestUpload;
             playback = decision.playback;

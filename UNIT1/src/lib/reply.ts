@@ -22,18 +22,12 @@ export function buildReply(
       switch (lookup.status) {
         case "live_found":
           return `Playing ${channelName} live.`;
-        case "lookup_failed":
-          return `I couldn't check whether ${channelName} is live. Try again in a bit.`;
         case "no_live_found":
           // Fallback: the reply makes clear this is NOT live, so nobody is misled.
-          switch (latestUpload?.status) {
-            case "latest_found":
-              return `${channelName} isn't live right now. Playing their latest video: ${latestUpload.title}.`;
-            case "no_uploads":
-              return `${channelName} isn't live right now and has no videos to play.`;
-            default:
-              return `${channelName} isn't live right now, and I couldn't get their latest video.`;
+          if (latestUpload?.status === "latest_found") {
+            return `${channelName} isn't live right now. Playing their latest video: ${latestUpload.title}.`;
           }
+          return `There's no content to show for ${channelName}.`;
       }
   }
 }

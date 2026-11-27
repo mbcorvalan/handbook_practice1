@@ -11,9 +11,8 @@ import type {
   CallLog,
   CommandRequest,
   FinalResult,
+  ChannelScenario,
   HistoryTurn,
-  LatestUploadScenario,
-  LookupScenario,
   PendingClarification,
   StreamEvent,
 } from "@/lib/api-types";
@@ -28,29 +27,33 @@ interface Turn {
 type PlayerState =
   | { status: "idle" }
   | { status: "loading"; channelName: string; kind: PlaybackKind }
-  | { status: "playing"; channelName: string; title: string; kind: PlaybackKind };
+  | {
+      status: "playing";
+      channelName: string;
+      title: string;
+      kind: PlaybackKind;
+    };
 
 type PlaybackKind = "live" | "latest_upload";
 
-const SCENARIOS: { value: LookupScenario; label: string }[] = [
-  { value: "live_found", label: "live_found · stream is live" },
-  { value: "no_live_found", label: "no_live_found · no live stream" },
-  { value: "lookup_failed", label: "lookup_failed · lookup error" },
+const SCENARIOS: { value: ChannelScenario; label: string }[] = [
+  { value: "live", label: "Live · the channel is streaming" },
+  { value: "latest_video", label: "Not live · plays the latest video" },
+  { value: "no_content", label: "Not live, no videos · no content to show" },
 ];
 
-const LATEST_SCENARIOS: { value: LatestUploadScenario; label: string }[] = [
-  { value: "latest_found", label: "latest_found · has a latest video" },
-  { value: "no_uploads", label: "no_uploads · channel has no videos" },
-  { value: "lookup_failed", label: "lookup_failed · lookup error" },
+const EXAMPLES = [
+  "Play OLGA",
+  "Play the usual one",
+  "OLGA",
+  "Play urbana",
+  "Turn up the volume",
 ];
-
-const EXAMPLES = ["Play OLGA", "Play the usual one", "OLGA", "Play urbana", "Turn up the volume"];
 const MAX_VISIBLE_TURNS = 8;
 
 export default function Home() {
   const [input, setInput] = useState("");
-  const [scenario, setScenario] = useState<LookupScenario>("live_found");
-  const [latestScenario, setLatestScenario] = useState<LatestUploadScenario>("latest_found");
+  const [scenario, setScenario] = useState<ChannelScenario>("live");
   const [busy, setBusy] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [pending, setPending] = useState<PendingClarification | null>(null);
@@ -77,14 +80,12 @@ export default function Home() {
     setPending(next);
   }
 
-  
-
   /**
    * Sends one listener command to the server and renders the turn as it streams in.
    *
-   * 1. Adds the turn to the history and clears the inspector.
-   * 2. Builds the request body: the utterance, the history of finished turns,
-   *    the pending clarification (if any), and the selected simulated scenarios.
+   * 1. Adds the turn to `turns` (what the user sees) and clears the inspector.
+   * 2. Builds the request body: the utterance, `history` (what the model sees),
+   *    the pending clarification (if any), and the selected simulated scenario.
    * 3. POSTs it to `/api/command`.
    * 4. Reads the response as NDJSON (one JSON object per line). Network chunks
    *    don't respect line boundaries, so bytes are accumulated in a buffer and
@@ -99,19 +100,30 @@ export default function Home() {
    *    - `error`   → marks the turn as failed
    *
    * @param utterance     What the listener said.
-   * @param scenarioToUse Simulated YouTube live-lookup result for this turn.
+   * @param scenarioToUse Simulated YouTube channel state for this turn.
    */
-  async function sendCommand(utterance: string, scenarioToUse: LookupScenario) {
+  async function sendCommand(
+    utterance: string,
+    scenarioToUse: ChannelScenario,
+  ) {
+    // 1. Add the turn
+    // 2. clear the inspector panel (log, fragments, last result).
     const text = utterance.trim();
     if (!text) return;
 
     const turnId = nextId.current++;
-    updateTurns([...turnsRef.current, { id: turnId, utterance: text, result: null, error: null }]);
+    updateTurns([
+      ...turnsRef.current,
+      { id: turnId, utterance: text, result: null, error: null },
+    ]);
     setLog(null);
     setFragments([]);
     setLastResult(null);
 
-    // History sent to the model: only finished turns.
+    // 3. Build the request body.
+    // `turns` = the full history the user sees on screen (includes the new turn).
+    // `history` = a trimmed copy for the model: only finished turns, and only
+    //             what was said + the resulting command (the new turn is left out).
     const history: HistoryTurn[] = turnsRef.current
       .filter((t) => t.result)
       .map((t) => ({
@@ -119,17 +131,20 @@ export default function Home() {
         command: t.result!.validation.ok ? t.result!.validation.command : null,
       }));
 
+    // Full request body
     const body: CommandRequest = {
       utterance: text,
       history,
       pending: pendingRef.current,
       scenario: scenarioToUse,
-      latestScenario,
     };
 
     const patchTurn = (patch: Partial<Turn>) =>
-      updateTurns(turnsRef.current.map((t) => (t.id === turnId ? { ...t, ...patch } : t)));
+      updateTurns(
+        turnsRef.current.map((t) => (t.id === turnId ? { ...t, ...patch } : t)),
+      );
 
+    // 4. Send POST /api/command and read the streamed NDJSON response.
     try {
       const res = await fetch("/api/command", {
         method: "POST",
@@ -157,6 +172,7 @@ export default function Home() {
       patchTurn({ error: e instanceof Error ? e.message : String(e) });
     }
 
+    // 5. Handle each event from the stream.
     function handleEvent(event: StreamEvent) {
       switch (event.type) {
         case "context":
@@ -181,7 +197,16 @@ export default function Home() {
             const name = r.channelName;
             const { title, kind } = r.playback;
             setPlayer({ status: "loading", channelName: name, kind });
-            setTimeout(() => setPlayer({ status: "playing", channelName: name, title, kind }), 700);
+            setTimeout(
+              () =>
+                setPlayer({
+                  status: "playing",
+                  channelName: name,
+                  title,
+                  kind,
+                }),
+              700,
+            );
           }
           break;
         }
@@ -230,7 +255,8 @@ export default function Home() {
   const lastTurn = turns.at(-1);
   const radioSays = lastTurn?.error
     ? `⚠ ${lastTurn.error}`
-    : lastTurn?.result?.reply ?? (lastTurn ? "…" : "Tell me which channel you want to listen to.");
+    : (lastTurn?.result?.reply ??
+      (lastTurn ? "…" : "Tell me which channel you want to listen to."));
 
   return (
     <main className={styles.main}>
@@ -254,10 +280,13 @@ export default function Home() {
         <div className={styles.player} data-status={player.status}>
           <span className={styles.dot} />
           {player.status === "idle" && <span>Player stopped</span>}
-          {player.status === "loading" && <span>Loading {player.channelName}…</span>}
+          {player.status === "loading" && (
+            <span>Loading {player.channelName}…</span>
+          )}
           {player.status === "playing" && (
             <span>
-              ▶ <span className={styles.kindTag} data-kind={player.kind}>
+              ▶{" "}
+              <span className={styles.kindTag} data-kind={player.kind}>
                 {player.kind === "live" ? "LIVE" : "LATEST VIDEO"}
               </span>{" "}
               <strong>{player.channelName}</strong> · {player.title}
@@ -281,7 +310,12 @@ export default function Home() {
 
         <div className={styles.chips}>
           {EXAMPLES.map((ex) => (
-            <button key={ex} className={styles.chip} onClick={() => runExample(ex)} disabled={busy}>
+            <button
+              key={ex}
+              className={styles.chip}
+              onClick={() => runExample(ex)}
+              disabled={busy}
+            >
               {ex}
             </button>
           ))}
@@ -289,10 +323,10 @@ export default function Home() {
 
         <div className={styles.controls}>
           <label className={styles.label}>
-            YouTube (simulated) responds:
+            YouTube channel (simulated):
             <select
               value={scenario}
-              onChange={(e) => setScenario(e.target.value as LookupScenario)}
+              onChange={(e) => setScenario(e.target.value as ChannelScenario)}
               disabled={busy}
               className={styles.select}
             >
@@ -303,22 +337,11 @@ export default function Home() {
               ))}
             </select>
           </label>
-          <label className={styles.label}>
-            If there&apos;s no live stream, latest-video lookup (simulated) responds:
-            <select
-              value={latestScenario}
-              onChange={(e) => setLatestScenario(e.target.value as LatestUploadScenario)}
-              disabled={busy}
-              className={styles.select}
-            >
-              {LATEST_SCENARIOS.map((s) => (
-                <option key={s.value} value={s.value}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button className={styles.secondary} onClick={runAllScenarios} disabled={busy}>
+          <button
+            className={styles.secondary}
+            onClick={runAllScenarios}
+            disabled={busy}
+          >
             Try “Play OLGA” with all 3 results
           </button>
           <button className={styles.secondary} onClick={reset} disabled={busy}>
@@ -328,12 +351,14 @@ export default function Home() {
 
         <h2 className={styles.h2}>History</h2>
         <ol className={styles.history}>
-          {turns.length === 0 && <li className={styles.empty}>No turns yet.</li>}
+          {turns.length === 0 && (
+            <li className={styles.empty}>No turns yet.</li>
+          )}
           {turns.slice(-MAX_VISIBLE_TURNS).map((t) => (
             <li key={t.id} className={styles.turn}>
               <div className={styles.you}>🎙 {t.utterance}</div>
               <div className={styles.bot}>
-                📻 {t.error ? `⚠ ${t.error}` : t.result?.reply ?? "…"}
+                📻 {t.error ? `⚠ ${t.error}` : (t.result?.reply ?? "…")}
               </div>
               {t.result && <ActionTag result={t.result} />}
             </li>
@@ -347,7 +372,8 @@ export default function Home() {
           {log ? (
             <>
               <p className={styles.meta}>
-                Model: <code>{log.model}</code> · effort: <code>{log.effort}</code>
+                Model: <code>{log.model}</code> · effort:{" "}
+                <code>{log.effort}</code>
               </p>
               <details>
                 <summary>system (rules + catalog)</summary>
@@ -364,7 +390,9 @@ export default function Home() {
               </details>
               <details>
                 <summary>output schema (JSON Schema)</summary>
-                <pre className={styles.pre}>{JSON.stringify(log.outputSchema, null, 2)}</pre>
+                <pre className={styles.pre}>
+                  {JSON.stringify(log.outputSchema, null, 2)}
+                </pre>
               </details>
             </>
           ) : (
@@ -423,7 +451,9 @@ export default function Home() {
           {lastResult?.lookup ? (
             <>
               <p className={styles.meta}>a) Is the channel live?</p>
-              <pre className={styles.pre}>{JSON.stringify(lastResult.lookup, null, 2)}</pre>
+              <pre className={styles.pre}>
+                {JSON.stringify(lastResult.lookup, null, 2)}
+              </pre>
               {lastResult.latestUpload && (
                 <>
                   <p className={styles.meta}>b) Not live → latest upload?</p>
@@ -433,7 +463,9 @@ export default function Home() {
                 </>
               )}
               <p className={styles.meta}>Playback plan (decided by code)</p>
-              <pre className={styles.pre}>{JSON.stringify(lastResult.playback, null, 2)}</pre>
+              <pre className={styles.pre}>
+                {JSON.stringify(lastResult.playback, null, 2)}
+              </pre>
             </>
           ) : (
             <p className={styles.empty}>
@@ -443,14 +475,24 @@ export default function Home() {
         </Panel>
 
         <Panel n={5} title="Conversational state (for the next turn)">
-          <pre className={styles.pre}>{JSON.stringify({ pending }, null, 2)}</pre>
+          <pre className={styles.pre}>
+            {JSON.stringify({ pending }, null, 2)}
+          </pre>
         </Panel>
       </section>
     </main>
   );
 }
 
-function Panel({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
+function Panel({
+  n,
+  title,
+  children,
+}: {
+  n: number;
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className={styles.panel}>
       <h3 className={styles.panelTitle}>
@@ -462,7 +504,8 @@ function Panel({ n, title, children }: { n: number; title: string; children: Rea
 }
 
 function ActionTag({ result }: { result: FinalResult }) {
-  if (!result.validation.ok) return <span className={styles.errTag}>invalid</span>;
+  if (!result.validation.ok)
+    return <span className={styles.errTag}>invalid</span>;
   const c = result.validation.command;
   return (
     <span className={styles.tag}>

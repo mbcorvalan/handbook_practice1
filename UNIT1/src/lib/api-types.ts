@@ -21,19 +21,21 @@ export interface HistoryTurn {
 
 // ---------- YouTube lookup (simulated) ----------
 
-export type LookupScenario = "live_found" | "no_live_found" | "lookup_failed";
+/**
+ * What the simulated channel looks like right now:
+ * - live:         streaming live
+ * - latest_video: not live, but has uploaded videos
+ * - no_content:   not live and has never uploaded anything
+ */
+export type ChannelScenario = "live" | "latest_video" | "no_content";
 
 export type LiveLookupResult =
   | { status: "live_found"; simulated: true; videoId: string; title: string }
-  | { status: "no_live_found"; simulated: true }
-  | { status: "lookup_failed"; simulated: true; error: string };
-
-export type LatestUploadScenario = "latest_found" | "no_uploads" | "lookup_failed";
+  | { status: "no_live_found"; simulated: true };
 
 export type LatestUploadResult =
   | { status: "latest_found"; simulated: true; videoId: string; title: string; publishedAt: string }
-  | { status: "no_uploads"; simulated: true }
-  | { status: "lookup_failed"; simulated: true; error: string };
+  | { status: "no_uploads"; simulated: true };
 
 /** What the player is told to play, decided by code (never by the model). */
 export interface PlaybackPlan {
@@ -48,10 +50,8 @@ export interface CommandRequest {
   utterance: string;
   history: HistoryTurn[];
   pending: PendingClarification | null;
-  /** What YouTube should "answer" to the live lookup in this test. */
-  scenario: LookupScenario;
-  /** What YouTube should "answer" to the latest-upload lookup (only used if there is no live). */
-  latestScenario: LatestUploadScenario;
+  /** What the simulated YouTube channel looks like in this test. */
+  scenario: ChannelScenario;
 }
 
 // ---------- Response: NDJSON events (one JSON line per event) ----------
